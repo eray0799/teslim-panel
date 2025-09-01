@@ -1,6 +1,8 @@
-// src/App.jsx
+
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabaseClient';
+import { Auth } from '@supabase/auth-ui-react';
+import { ThemeSupa } from '@supabase/auth-ui-shared';
 
 // Charts
 import 'chart.js/auto';
@@ -71,7 +73,7 @@ function getProjectRoot(val) {
   const s = (val ?? '').toString().trim();
   if (!s) return '—';
   const bySlash = s.split('/')[0].trim();
-  const m = bySlash.match(/^(\d{4})/);
+  const m = bySlash.match(/^(\\d{4})/);
   return (m ? m[1] : bySlash) || '—';
 }
 
@@ -183,6 +185,36 @@ export default function App() {
   const [agendaLoading, setAgendaLoading] = useState(false);
   const [agendaError, setAgendaError] = useState(null);
 
+  // NEW: login session state (admin mod için)
+  const [session, setSession] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) setSession(data.session || null);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setSession(sess || null);
+    });
+    return () => {
+      mounted = false;
+      sub?.subscription?.unsubscribe?.();
+    };
+  }, []);
+
+  // Admin modda oturum yoksa login ekranını göster
+  if (!IS_PUBLIC && !session) {
+    return (
+      <div style={{ maxWidth: 420, margin: '60px auto', color: '#E6ECFF' }}>
+        <h2 style={{ textAlign: 'center', marginBottom: 16 }}>Admin Giriş</h2>
+        <div style={{ background:'#0B1020', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, padding:16 }}>
+          <Auth supabaseClient={supabase} appearance={{ theme: ThemeSupa }} providers={[]} />
+        </div>
+      </div>
+    );
+  }
+
+  // İlk yükleme
   useEffect(() => {
     let ignore = false;
     (async () => {
@@ -223,6 +255,7 @@ export default function App() {
     return () => { ignore = true; };
   }, []);
 
+  // Seçili kaydın detayını çek
   useEffect(() => {
     if (!selectedId || !cols) { setDetail(null); return; }
     let ignore = false;
@@ -258,7 +291,7 @@ export default function App() {
     return () => { ignore = true; };
   }, [selectedId, cols]);
 
-  // week agenda
+  // Haftalık takvim (bugün dahil 7 gün)
   useEffect(() => {
     if (!cols || !cols.randevuTarih) return;
     let ignore = false;
@@ -529,8 +562,22 @@ export default function App() {
         {/* ------- HEADER ------- */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <h2 style={{ margin: 0 }}>Teslim Paneli</h2>
+          {!IS_PUBLIC && session && (
+            <button
+              onClick={() => supabase.auth.signOut()}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 8,
+                padding: '6px 12px',
+                color: '#E6ECFF',
+              }}
+            >
+              Çıkış
+            </button>
+          )}
           <div style={{ fontSize: 12, color: '#94A3B8' }}>
-            Mod: <b>{IS_PUBLIC ? 'Public (yalnız durum günceller)' : 'Admin (tam yetki)'} </b>
+            Mod: <b>{IS_PUBLIC ? 'Public (yalnız durum)' : 'Admin (tam yetki)'} </b>
           </div>
         </div>
 
@@ -733,7 +780,6 @@ export default function App() {
   );
 }
 
-// ---------- UI Components ----------
 function KPI({ label, value }) {
   return (
     <div style={styles.kpi}>
