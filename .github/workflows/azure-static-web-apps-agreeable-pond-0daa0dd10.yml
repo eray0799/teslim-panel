@@ -24,28 +24,23 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Build And Deploy
-        id: builddeploy
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_AGREEABLE_POND_0DAA0DD10 }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          # Repo/Build config
-          app_location: "/"          # app source
-          api_location: ""           # no API
-          output_location: "dist"    # Vite output
-          # Critically ensure dev deps & build run:
-          app_build_command: "npm ci --include=dev && npm run build"
+      - name: Install deps (include dev)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --include=dev
+          else
+            npm install
+          fi
 
-  close_pull_request_job:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    name: Close Pull Request Job
-    steps:
-      - name: Close Pull Request
-        id: closepullrequest
+      - name: Build
+        run: npm run build
+
+      - name: Deploy to Azure Static Web Apps (upload prebuilt dist)
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_AGREEABLE_POND_0DAA0DD10 }}
-          action: "close"
+          action: upload
+          skip_app_build: true
+          app_location: /
+          app_artifact_location: dist
+          api_location: ""
