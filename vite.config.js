@@ -1,8 +1,20 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+// src/supabaseClient.js
+import { createClient } from '@supabase/supabase-js';
 
-export default defineConfig({
-  plugins: [react()],
-  server: { port: 5173 },
-  build: { outDir: 'dist' }
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  // Prod’da sorun varsa konsolda bunu görürsün
+  console.error('Missing Supabase envs:', {
+    hasUrl: !!SUPABASE_URL,
+    hasAnonKey: !!SUPABASE_ANON_KEY,
+  });
+}
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  },
 });
