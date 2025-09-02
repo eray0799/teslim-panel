@@ -12,7 +12,25 @@ const IS_PUBLIC = MODE === 'public';
 /* ========= ERROR BOUNDARY (beyaz ekran yerine hata gösterir) ========= */
 function ErrorBoundary({ children }) {
   const [err, setErr] = useState(null);
-  useEffect(() => {
+  
+// added: authReady resolver
+useEffect(() => {
+  let mounted = true;
+  supabase.auth.getSession().then(({ data }) => {
+    if (!mounted) return;
+    setAuthReady(true);
+  });
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, _sess) => {
+    if (!mounted) return;
+    setAuthReady(true);
+  });
+  return () => {
+    mounted = false;
+    try { sub?.subscription?.unsubscribe?.(); } catch {}
+  };
+}, []);
+
+useEffect(() => {
     const onErr = (e) => setErr(e?.error || e?.reason || e?.message || String(e));
     window.addEventListener('error', onErr);
     window.addEventListener('unhandledrejection', onErr);
@@ -32,7 +50,7 @@ function ErrorBoundary({ children }) {
 
 /* ========= COLUMN GUESS ========= */
 const CANDIDATES = {
-  id: ['id', 'unit_id', 'uuid'],
+  maintainAspectRatio: false, id: ['id', 'unit_id', 'uuid'],
   label: ['daire_no', 'daire', 'no', 'label', 'adi', 'ad', 'bagimsiz_bolum', 'bb_no'],
   blok: ['blok', 'blok_no', 'block', 'block_no', 'blok_adi', 'blokadi'],
   malik: ['malik', 'mâlik', 'malık', 'MALİK'],
@@ -92,7 +110,7 @@ function getProjectRoot(val) {
   return (m ? m[1] : bySlash) || '—';
 }
 // Başlık (ekranda 2115 -> 2115/1, 2116 -> 2116/2)
-const ROOT_LABEL_MAP = { '2115': '2115/1', '2116': '2116/2' };
+const ROOT_LABEL_MAP = { maintainAspectRatio: false, '2115': '2115/1', '2116': '2116/2' };
 
 function sortUnits(units, cols) {
   if (!cols) return units ?? [];
@@ -168,7 +186,14 @@ function inRange(dateStr, fromYmd, toYmd) {
 
 /* ========= APP ========= */
 export default function App() {
+
+// added guard to prevent admin flicker
+if (!IS_PUBLIC && !authReady) {
+  return <div style={{maxWidth:420,margin:'60px auto',color:'#E6ECFF'}}><div style={{opacity:.7,fontSize:14}}>Oturum yükleniyor…</div></div>;
+}
+
   const [units, setUnits] = useState([]);
+const [authReady, setAuthReady] = useState(false);
   const [cols, setCols] = useState(null);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState(null);
@@ -253,7 +278,7 @@ export default function App() {
       if (error) setDetail(null);
       else {
         const base = {
-          [cols.id]: data[cols.id],
+          maintainAspectRatio: false, [cols.id]: data[cols.id],
           ...(cols.proje ? { [cols.proje]: data[cols.proje] ?? '' } : {}),
           ...(cols.blok ? { [cols.blok]: data[cols.blok] ?? '' } : {}),
           ...(cols.label ? { [cols.label]: data[cols.label] ?? '' } : {}),
@@ -281,7 +306,7 @@ export default function App() {
     setSaveErr(null);
     setSaveMsg(null);
 
-    const payload = {};
+    const payload = {maintainAspectRatio: false, };
     if (!IS_PUBLIC) {
       if (cols.proje) payload[cols.proje] = (detail[cols.proje] ?? '').toString().trim() || null;
       if (cols.blok) payload[cols.blok] = (detail[cols.blok] ?? '').toString().trim() || null;
@@ -307,7 +332,7 @@ export default function App() {
     if (!cols) return null;
     const total = units.length;
 
-    const statusCounts = {};
+    const statusCounts = {maintainAspectRatio: false, };
     for (const u of units) {
       const v = cols.durum ? (u[cols.durum] ?? '—') : '—';
       const key = (v || '—').toString();
@@ -323,8 +348,8 @@ export default function App() {
       return deriveTipFromRule(cols.blok ? u[cols.blok] : '', cols.label ? u[cols.label] : '');
     };
 
-    const tipGroups = { Konut: { total: 0, delivered: 0 }, Ticari: { total: 0, delivered: 0 } };
-    const breakdown = { Konut: {}, Ticari: {} };
+    const tipGroups = { maintainAspectRatio: false, Konut: { total: 0, delivered: 0 }, Ticari: { total: 0, delivered: 0 } };
+    const breakdown = { maintainAspectRatio: false, Konut: {}, Ticari: {} };
 
     for (const u of units) {
       const t = tipGetter(u).toLowerCase().includes('ticari') ? 'Ticari' : 'Konut';
@@ -365,7 +390,7 @@ export default function App() {
     }
 
     const tipStats = {
-      Konut: {
+      maintainAspectRatio: false, Konut: {
         total: tipGroups.Konut.total,
         delivered: tipGroups.Konut.delivered,
         pct: tipGroups.Konut.total ? Math.round((tipGroups.Konut.delivered / tipGroups.Konut.total) * 100) : 0,
@@ -476,7 +501,7 @@ export default function App() {
                 <div style={styles.tipItem}>
                   <div style={{ ...styles.tipTitle, fontSize: 16 }}>Konut</div>
                   <div style={styles.pieWrap}>
-                    {konutPie && <Pie data={konutPie} options={{ responsive: true, plugins: { legend: { display: false } } }} />}
+                    {konutPie && <Pie data={konutPie} options={{ maintainAspectRatio: false,  responsive: true, plugins: { legend: { display: false } } }} />}
                   </div>
                   <div style={styles.tipRow}><span>Toplam:</span><b>{report.tipStats.Konut.total}</b></div>
                   <div style={styles.tipRow}><span>Teslim:</span><b>{report.tipStats.Konut.delivered}</b></div>
@@ -485,7 +510,7 @@ export default function App() {
                 <div style={styles.tipItem}>
                   <div style={{ ...styles.tipTitle, fontSize: 16 }}>Ticari</div>
                   <div style={styles.pieWrap}>
-                    {ticariPie && <Pie data={ticariPie} options={{ responsive: true, plugins: { legend: { display: false } } }} />}
+                    {ticariPie && <Pie data={ticariPie} options={{ maintainAspectRatio: false,  responsive: true, plugins: { legend: { display: false } } }} />}
                   </div>
                   <div style={styles.tipRow}><span>Toplam:</span><b>{report.tipStats.Ticari.total}</b></div>
                   <div style={styles.tipRow}><span>Teslim:</span><b>{report.tipStats.Ticari.delivered}</b></div>
@@ -721,7 +746,7 @@ function TipBreakdown({ tip, data }) {
 }
 
 const styles = {
-  wrap: {
+  maintainAspectRatio: false, wrap: {
     display: 'flex',
     height: '100vh',
     fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif',
