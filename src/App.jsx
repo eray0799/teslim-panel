@@ -9,7 +9,7 @@ const TABLE = import.meta.env.VITE_TABLE_NAME || 'teslimatlar';
 const MODE = import.meta.env.VITE_MODE || 'public'; // 'public' | 'admin'
 const IS_PUBLIC = MODE === 'public';
 
-/* ========= ERROR BOUNDARY (beyaz ekran yerine hata gösterir) ========= */
+/* ========= ERROR BOUNDARY (beyaz ekran yerine hata) ========= */
 function ErrorBoundary({ children }) {
   const [err, setErr] = useState(null);
   useEffect(() => {
@@ -30,6 +30,15 @@ function ErrorBoundary({ children }) {
   return children;
 }
 
+/* ========= CHART OPTIONS (pie boyutu sabitle) ========= */
+const PIE_OPTS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  aspectRatio: 1,
+  plugins: { legend: { display: false }, tooltip: { enabled: true } },
+  animation: false,
+};
+
 /* ========= COLUMN GUESS ========= */
 const CANDIDATES = {
   id: ['id', 'unit_id', 'uuid'],
@@ -41,7 +50,7 @@ const CANDIDATES = {
   aciklama: ['aciklama', 'açıklama', 'AÇIKLAMA', 'not', 'aciklama_not'],
   randevuTarih: ['randevu_tarihi', 'randevu', 'randevu_date', 'tarih'],
   randevuSaat: ['randevu_saati', 'randevu_saat', 'saat', 'time'],
-  tip: ['tip', 'kategori', 'tur', 'type'], // Konut/Ticari
+  tip: ['tip', 'kategori', 'tur', 'type'],
   updatedAt: ['updated_at', 'guncellendi', 'guncelleme_tarihi'],
   proje: ['proje', 'project', 'project_name', 'proje_adi', 'pars_no', 'parsel', 'site', 'site_adi'],
 };
@@ -91,7 +100,7 @@ function getProjectRoot(val) {
   const m = bySlash.match(/^(\d{4})/);
   return (m ? m[1] : bySlash) || '—';
 }
-// Başlık (ekranda 2115 -> 2115/1, 2116 -> 2116/2)
+// Başlık haritası (ekranda 2115 → 2115/1, 2116 → 2116/2)
 const ROOT_LABEL_MAP = { '2115': '2115/1', '2116': '2116/2' };
 
 function sortUnits(units, cols) {
@@ -120,13 +129,6 @@ const pad2 = (n) => String(n).padStart(2, '0');
 const startOfDay = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-function getNext7Days() {
-  const today = startOfDay(new Date());
-  return Array.from({ length: 7 }, (_, i) => {
-    const dt = addDays(today, i);
-    return { date: dt, key: ymd(dt), label: `${TR_DAY_SHORT[dt.getDay()]} ${pad2(dt.getDate())}.${pad2(dt.getMonth()+1)}` };
-  });
-}
 function normalizeDateInput(val) {
   if (!val) return '';
   try {
@@ -139,12 +141,6 @@ function normalizeTimeInput(val) {
   if (!val) return '';
   if (typeof val === 'string') return val.split(':').slice(0, 2).join(':') || '';
   return '';
-}
-function timeToMinutes(timeStr) {
-  if (!timeStr) return Number.POSITIVE_INFINITY;
-  const [h, m] = timeStr.split(':').map((s) => parseInt(s, 10));
-  if (Number.isNaN(h) || Number.isNaN(m)) return Number.POSITIVE_INFINITY;
-  return h * 60 + m;
 }
 function deriveTipFromRule(blokVal, noVal) {
   const blok = (blokVal ?? '').toString().trim();
@@ -159,11 +155,6 @@ function isDelivered(value) {
   if (!value) return false;
   const s = value.toString().toLowerCase();
   return s.includes('teslim');
-}
-function inRange(dateStr, fromYmd, toYmd) {
-  if (!dateStr) return false;
-  const d = dateStr.slice(0,10);
-  return d >= fromYmd && d <= toYmd;
 }
 
 /* ========= APP ========= */
@@ -302,7 +293,7 @@ export default function App() {
     setSaveLoading(false);
   };
 
-  // ---------- RAPOR / GRAFİKLER ----------
+  /* ---------- RAPOR / GRAFİKLER ---------- */
   const report = useMemo(() => {
     if (!cols) return null;
     const total = units.length;
@@ -476,7 +467,7 @@ export default function App() {
                 <div style={styles.tipItem}>
                   <div style={{ ...styles.tipTitle, fontSize: 16 }}>Konut</div>
                   <div style={styles.pieWrap}>
-                    {konutPie && <Pie data={konutPie} options={{ responsive: true, plugins: { legend: { display: false } } }} />}
+                    {konutPie && <Pie data={konutPie} options={PIE_OPTS} width={240} height={160} redraw />}
                   </div>
                   <div style={styles.tipRow}><span>Toplam:</span><b>{report.tipStats.Konut.total}</b></div>
                   <div style={styles.tipRow}><span>Teslim:</span><b>{report.tipStats.Konut.delivered}</b></div>
@@ -485,7 +476,7 @@ export default function App() {
                 <div style={styles.tipItem}>
                   <div style={{ ...styles.tipTitle, fontSize: 16 }}>Ticari</div>
                   <div style={styles.pieWrap}>
-                    {ticariPie && <Pie data={ticariPie} options={{ responsive: true, plugins: { legend: { display: false } } }} />}
+                    {ticariPie && <Pie data={ticariPie} options={PIE_OPTS} width={240} height={160} redraw />}
                   </div>
                   <div style={styles.tipRow}><span>Toplam:</span><b>{report.tipStats.Ticari.total}</b></div>
                   <div style={styles.tipRow}><span>Teslim:</span><b>{report.tipStats.Ticari.delivered}</b></div>
@@ -493,7 +484,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* İstenen kırılım: 2115/2116 → 24 Gayrimenkul & Diğerleri → Toplam (Konut ve Ticari ayrı) */}
+              {/* 2115/2116 → 24 Gayrimenkul & Diğerleri → Toplam (Konut/Ticari ayrı) */}
               <TipBreakdown tip="Konut" data={report.breakdown?.Konut || {}} />
               <TipBreakdown tip="Ticari" data={report.breakdown?.Ticari || {}} />
 
@@ -648,7 +639,7 @@ export default function App() {
   );
 }
 
-/* ========= SMALL COMPONENTS & STYLES ========= */
+/* ========= SMALL COMPONENTS ========= */
 function KPI({ label, value }) {
   return (
     <div style={styles.kpi}>
@@ -696,7 +687,7 @@ function TipBreakdown({ tip, data }) {
       <div style={styles.projeGrid}>
         {roots.map((root) => {
           const node = data[root];
-          const title = ROOT_LABEL_MAP[root] || root; // 2115 -> 2115/1
+          const title = ROOT_LABEL_MAP[root] || root;
           return (
             <div key={`${tip}-${root}`} style={styles.tipItem}>
               <div style={styles.tipTitle}>{title}</div>
@@ -720,6 +711,7 @@ function TipBreakdown({ tip, data }) {
   );
 }
 
+/* ========= STYLES ========= */
 const styles = {
   wrap: {
     display: 'flex',
@@ -796,19 +788,29 @@ const styles = {
   progressLabel: { marginTop: 6, fontSize: 12, color: '#9AA6B2' },
 
   tipGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 8 },
-  projeGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 8 },
+
+  /* kart içi layout: pie’ı büyütme */
   tipItem: {
     background: 'rgba(255,255,255,0.02)',
     border: '1px solid rgba(255,255,255,0.06)',
     borderRadius: 10,
     padding: 10,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'stretch',
+    display: 'grid',
+    alignContent: 'start',
   },
   tipTitle: { fontSize: 13, fontWeight: 700, marginBottom: 6, textAlign: 'center' },
   tipRow: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#E6ECFF', justifyContent: 'space-between' },
-  pieWrap: { height: 100, width: '100%', marginBottom: 8 },
+
+  /* PIE wrapper — sabit boyut & taşma yok */
+  pieWrap: {
+    position: 'relative',
+    width: '100%',
+    height: 160,
+    maxWidth: 240,
+    margin: '0 auto 8px',
+  },
+
+  projeGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 8 },
 
   statusGrid: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginTop: 8 },
   statusItem: { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: 8 },
