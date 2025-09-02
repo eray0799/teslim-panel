@@ -9,15 +9,18 @@
     "preview": "vite preview --port 5174"
   },
   "dependencies": {
-    "chart.js": "4.4.4",
-    "react-chartjs-2": "5.2.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "@supabase/auth-ui-react": "^0.4.7",
     "@supabase/supabase-js": "^2.45.0",
-    "@supabase/auth-ui-react": "^0.4.7"
+    "chart.js": "4.4.4",
+    "react": "^18.3.1",
+    "react-chartjs-2": "5.2.0",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "vite": "^5.4.0",
-    "@vitejs/plugin-react": "^4.3.1"
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4"
   }
 }
