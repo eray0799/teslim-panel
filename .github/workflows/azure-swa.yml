@@ -1,14 +1,14 @@
-name: Azure Static Web Apps CI/CD
+name: CI - Vite Build
 
 on:
   push:
-    branches: [ main ]   # repo'nun ana branch'i main değilse burayı değiştir
-  workflow_dispatch:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  build_and_deploy:
+  build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,21 +16,31 @@ jobs:
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '20.x'
 
-      # optional dependency hatalarını önlemek için
-      - name: Install dependencies (no optional)
-        run: npm ci --omit=optional
+      # ⚠️ Kritik: Windows lockfile'ı CI'da kullanma
+      - name: Clean workspace (lockfile & node_modules)
+        run: rm -rf node_modules package-lock.json
+
+      # Linux runner kendi platformuna uygun optional native paketi (rollup-linux-*) çözer
+      - name: Install dependencies (fresh, include optional)
+        run: npm install --include=optional
+
+      - name: Rebuild native deps (best-effort)
+        run: npm rebuild || true
+
+      - name: Print versions (diagnostic)
+        run: |
+          node -v
+          npm -v
+          node -e "try{console.log('rollup version:', require('rollup/package.json').version)}catch(e){console.error('rollup not resolvable')}"
 
       - name: Build
         run: npm run build
 
-      - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
         with:
-          # Secret adı Azure'un oluşturduğu uzun adla eşleşmeli
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_CALM_SEA_061C64D1E }}
-          action: upload
-          app_location: /
-          output_location: dist
+          name: dist
+          path: dist
+          if-no-files-found: error
