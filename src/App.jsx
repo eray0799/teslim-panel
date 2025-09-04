@@ -1,10 +1,13 @@
-// src/App.jsx
+
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabaseClient';
 
 // Grafikler
 import 'chart.js/auto';
+import { Chart as ChartJS } from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { Pie } from 'react-chartjs-2';
+ChartJS.register(ChartDataLabels);
 
 // Tablo adı (.env ile override edebilirsin)
 const TABLE = import.meta.env.VITE_TABLE_NAME || 'teslimatlar';
@@ -17,7 +20,7 @@ const CANDIDATES = {
   musteri: ['musteri', 'müşteri', 'MÜŞTERİ', 'musteri_adi', 'musteri_ad'],
   durum: ['durum', 'status'],
   aciklama: ['aciklama', 'açıklama', 'AÇIKLAMA', 'not', 'aciklama_not'],
-  randevuTarih: ['randevu_tarihi', 'randevu', 'randevu_date', 'tarih'],
+  randevuTarih: ['randevu_tarihi', 'randevu', 'randevu_date', 'tarih', 'date'],
   randevuSaat: ['randevu_saati', 'randevu_saat', 'saat', 'time'],
   tip: ['tip', 'kategori', 'tur', 'type'], // Konut/Ticari
   updatedAt: ['updated_at', 'guncellendi', 'guncelleme_tarihi'],
@@ -127,10 +130,10 @@ const TR_DAY_SHORT = ['Paz', 'Pts', 'Sal', 'Çar', 'Per', 'Cum', 'Cts'];
 function startOfDay(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function ymd(d) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
-function getNext7Days() {
-  const today = startOfDay(new Date());
+function getWeekDays(weekStart) {
+  const start = startOfWeek(weekStart);
   return Array.from({ length: 7 }, (_, i) => {
-    const dt = addDays(today, i);
+    const dt = addDays(start, i);
     return { date: dt, key: ymd(dt), label: `${TR_DAY_SHORT[dt.getDay()]} ${pad2(dt.getDate())}.${pad2(dt.getMonth()+1)}` };
   });
 }
@@ -139,6 +142,14 @@ function timeToMinutes(timeStr) {
   const [h, m] = timeStr.split(':').map((s) => parseInt(s, 10));
   if (Number.isNaN(h) || Number.isNaN(m)) return Number.POSITIVE_INFINITY;
   return h * 60 + m;
+}
+function startOfWeek(d) {
+  const dt = startOfDay(d);
+  const day = dt.getDay(); // 0 Pazar..6 Cumartesi
+  const diff = (day === 0 ? -6 : 1 - day); // Pazartesi başlangıç
+  const monday = new Date(dt);
+  monday.setDate(dt.getDate() + diff);
+  return startOfDay(monday);
 }
 
 /* Kurala göre Tip (Konut/Ticari) türetici
@@ -164,6 +175,56 @@ function inRange(dateStr, fromYmd, toYmd) {
   return d >= fromYmd && d <= toYmd;
 }
 
+// --- Yüzdeli, büyük ve ortalanmış pie ---
+function DeliveredPie({ title, delivered, total }) {
+  const remaining = Math.max(0, (total || 0) - (delivered || 0));
+  const data = useMemo(() => ({
+    labels: ['Teslim', 'Kalan'],
+    datasets: [{
+      data: [delivered || 0, remaining],
+      backgroundColor: ['#16a34a', '#f97316'],   // Yeşil (Teslim) & Turuncu (Kalan)
+      borderColor: ['#166534', '#ea580c'],
+      borderWidth: 2,
+    }],
+  }), [delivered, remaining]);
+
+  const options = useMemo(() => ({
+    responsive: true,
+    plugins: {
+      legend: { position: 'bottom', labels: { color: '#E6ECFF', font: { size: 14 } } },
+      title: { display: false }, // Chart.js başlığını kapat -> çift başlık sorunu çözülür
+      datalabels: {
+        color: '#ffffff',
+        font: { weight: 'bold', size: 14 },
+        formatter: (value, context) => {
+          const ds = context.chart.data.datasets[0].data;
+          const sum = ds.reduce((a, b) => Number(a) + Number(b), 0);
+          if (!sum) return '0%';
+          const pct = (value / sum) * 100;
+          return `${pct.toFixed(1)}%`;
+        },
+        anchor: 'center',
+        align: 'center',
+        textStrokeColor: '#000',
+        textStrokeWidth: 2,
+        clamp: true,
+      },
+    },
+  }), [title]);
+
+  return (
+    <div style={styles.tipItem}>
+      <div style={{ ...styles.tipTitle, fontSize: 18, textAlign: 'center' }}>{title}</div>
+      <div style={styles.centeredPieWrap}>
+        <Pie data={data} options={options} />
+      </div>
+      <div style={styles.tipRow}><span>Toplam:</span><b>{total || 0}</b></div>
+      <div style={styles.tipRow}><span>Teslim:</span><b>{delivered || 0}</b></div>
+      <div style={styles.tipRow}><span>Kalan:</span><b>{remaining}</b></div>
+    </div>
+  );
+}
+
 export default function App() {
   const [units, setUnits] = useState([]);
   const [cols, setCols] = useState(null);
@@ -177,7 +238,9 @@ export default function App() {
   const [saveMsg, setSaveMsg] = useState(null);
   const [saveErr, setSaveErr] = useState(null);
 
-  const [agenda, setAgenda] = useState({ days: getNext7Days(), itemsByDay: {} });
+  // ---- Haftalık gezinme: state + butonlar ----
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [agenda, setAgenda] = useState({ days: getWeekDays(weekStart), itemsByDay: {} });
   const [agendaLoading, setAgendaLoading] = useState(false);
   const [agendaError, setAgendaError] = useState(null);
 
@@ -299,14 +362,14 @@ export default function App() {
     return () => { ignore = true; };
   }, [selectedId, cols]);
 
-  // Haftalık takvim (bugün dahil 7 gün)
+  // Haftalık takvim (gezilebilir)
   useEffect(() => {
     if (!cols || !cols.randevuTarih) return;
     let ignore = false;
     (async () => {
       setAgendaLoading(true);
       setAgendaError(null);
-      const days = getNext7Days();
+      const days = getWeekDays(weekStart);
       const from = days[0].key;
       const to = days[days.length - 1].key;
 
@@ -344,7 +407,7 @@ export default function App() {
       setAgendaLoading(false);
     })();
     return () => { ignore = true; };
-  }, [cols, units.length, saveMsg]);
+  }, [cols, units.length, saveMsg, weekStart]);
 
   const handleChange = (key, val) => setDetail((d) => ({ ...d, [key]: val }));
 
@@ -404,18 +467,6 @@ export default function App() {
     const delivered = units.reduce((acc, u) => acc + (isDelivered(cols?.durum ? u[cols.durum] : null) ? 1 : 0), 0);
     const remaining = Math.max(total - delivered, 0);
     const pct = total > 0 ? Math.round((delivered / total) * 100) : 0;
-
-    // Bu hafta randevu sayısı
-    let weeklyWithAppt = 0;
-    if (cols.randevuTarih) {
-      const days = getNext7Days();
-      const from = days[0].key;
-      const to = days[days.length - 1].key;
-      weeklyWithAppt = units.reduce((acc, u) => {
-        const dt = normalizeDateInput(cols?.randevuTarih ? u[cols.randevuTarih] : null);
-        return acc + (inRange(dt, from, to) ? 1 : 0);
-      }, 0);
-    }
 
     // Tip tespiti (kolon yoksa kural)
     const tipGetter = (u) => {
@@ -482,27 +533,17 @@ export default function App() {
       },
     };
 
-    return { total, delivered, remaining, pct, statusCounts, weeklyWithAppt, tipStats, breakdown };
+    // --- ÖZEL: 2115 ve 2116 için toplamlar (tip ayırmadan) ---
+    const sectionTotals = { '2115': { total: 0, delivered: 0 }, '2116': { total: 0, delivered: 0 } };
+    for (const u of units) {
+      const root = cols.proje ? getProjectRoot(u[cols.proje]) : null;
+      if (!root || !(root in sectionTotals)) continue;
+      sectionTotals[root].total += 1;
+      if (isDelivered(cols?.durum ? u[cols.durum] : null)) sectionTotals[root].delivered += 1;
+    }
+
+    return { total, delivered, remaining, pct, statusCounts, tipStats, breakdown, sectionTotals };
   }, [units, cols]);
-
-  // Konut/Ticari pie dataları (genel ilerleme için)
-  const konutPie = useMemo(() => report ? ({
-    labels: ['Teslim', 'Kalan'],
-    datasets: [{
-      data: [report.tipStats.Konut.delivered, report.tipStats.Konut.total - report.tipStats.Konut.delivered],
-      backgroundColor: ['#34D399', '#FCA5A5'],
-      borderWidth: 1,
-    }],
-  }) : null, [report?.tipStats?.Konut]);
-
-  const ticariPie = useMemo(() => report ? ({
-    labels: ['Teslim', 'Kalan'],
-    datasets: [{
-      data: [report.tipStats.Ticari.delivered, report.tipStats.Ticari.total - report.tipStats.Ticari.delivered],
-      backgroundColor: ['#34D399', '#FCA5A5'],
-      borderWidth: 1,
-    }],
-  }) : null, [report?.tipStats?.Ticari]);
 
   const selectedLabel = useMemo(() => {
     if (!cols) return '';
@@ -517,7 +558,6 @@ export default function App() {
     if (roots.length === 0) return null;
     return (
       <div style={{ marginTop: 8 }}>
-        {/* Başlığı belirginleştirdik */}
         <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{tip}</div>
         <div style={styles.projeGrid}>
           {roots.map((root) => {
@@ -628,34 +668,33 @@ export default function App() {
                 <KPI label="Teslim" value={report.delivered} />
                 <KPI label="Kalan" value={report.remaining} />
                 <KPI label="Tamamlanma" value={`${report.pct}%`} />
-                {cols?.randevuTarih && <KPI label="Bu hafta randevu" value={report.weeklyWithAppt} />}
               </div>
             </div>
 
-            {/* Genel ilerleme */}
-            <div style={styles.progressWrap} title={`%${report.pct} tamamlandı`}>
-              <div style={styles.progressTrack}>
-                <div style={{ ...styles.progressFill, width: `${report.pct}%` }} />
-              </div>
-              <div style={styles.progressLabel}>%{report.pct} tamamlandı</div>
+            {/* ÖZEL: 2115/1 ve 2116/2 pie grafikleri (yüzdeli, büyük ve ortalı) */}
+            <div style={styles.tipGrid}>
+              <DeliveredPie
+                title="2115/1 — Teslim vs Kalan"
+                delivered={report.sectionTotals['2115']?.delivered || 0}
+                total={report.sectionTotals['2115']?.total || 0}
+              />
+              <DeliveredPie
+                title="2116/2 — Teslim vs Kalan"
+                delivered={report.sectionTotals['2116']?.delivered || 0}
+                total={report.sectionTotals['2116']?.total || 0}
+              />
             </div>
 
             {/* Konut/Ticari toplam kırılımı (genel) */}
             <div style={styles.tipGrid}>
               <div style={styles.tipItem}>
-                <div style={{ ...styles.tipTitle, fontSize: 16 }}>Konut</div>
-                <div style={styles.pieWrap}>
-                  {konutPie && <Pie data={konutPie} options={{ responsive: true, plugins: { legend: { display: false } } }} />}
-                </div>
+                <div style={{ ...styles.tipTitle, fontSize: 16, textAlign: 'center' }}>Konut (Genel)</div>
                 <div style={styles.tipRow}><span>Toplam:</span><b>{report.tipStats.Konut.total}</b></div>
                 <div style={styles.tipRow}><span>Teslim:</span><b>{report.tipStats.Konut.delivered}</b></div>
                 <div style={styles.tipRow}><span>Tamamlanma:</span><b>{report.tipStats.Konut.pct}%</b></div>
               </div>
               <div style={styles.tipItem}>
-                <div style={{ ...styles.tipTitle, fontSize: 16 }}>Ticari</div>
-                <div style={styles.pieWrap}>
-                  {ticariPie && <Pie data={ticariPie} options={{ responsive: true, plugins: { legend: { display: false } } }} />}
-                </div>
+                <div style={{ ...styles.tipTitle, fontSize: 16, textAlign: 'center' }}>Ticari (Genel)</div>
                 <div style={styles.tipRow}><span>Toplam:</span><b>{report.tipStats.Ticari.total}</b></div>
                 <div style={styles.tipRow}><span>Teslim:</span><b>{report.tipStats.Ticari.delivered}</b></div>
                 <div style={styles.tipRow}><span>Tamamlanma:</span><b>{report.tipStats.Ticari.pct}%</b></div>
@@ -682,15 +721,22 @@ export default function App() {
         {cols?.randevuTarih ? (
           <section style={styles.agendaCard}>
             <div style={styles.agendaHeader}>
-              <h3 style={{ margin: 0 }}>Bu Hafta Randevular</h3>
-              {agendaLoading && <span style={styles.muted}>Yükleniyor…</span>}
-              {agendaError && <span style={styles.error}>Hata: {agendaError}</span>}
+              <h3 style={{ margin: 0 }}>Randevular (Haftalık)</h3>
+              <div style={{ display:'flex', gap:8, marginLeft:'auto' }}>
+                <button style={styles.saveBtn} onClick={() => setWeekStart(addDays(weekStart, -7))}>◀ Önceki Hafta</button>
+                <button style={styles.saveBtn} onClick={() => setWeekStart(startOfWeek(new Date()))}>Bugün</button>
+                <button style={styles.saveBtn} onClick={() => setWeekStart(addDays(weekStart, 7))}>Sonraki Hafta ▶</button>
+              </div>
+            </div>
+            <div style={{ ...styles.muted, marginBottom:6 }}>
+              {ymd(getWeekDays(weekStart)[0].date)} – {ymd(getWeekDays(weekStart)[6].date)}
             </div>
             <div style={styles.agendaGrid}>
-              {agenda.days.map((d) => {
+              {getWeekDays(weekStart).map((d) => {
                 const items = agenda.itemsByDay[d.key] || [];
+                const isToday = ymd(startOfDay(new Date())) === d.key;
                 return (
-                  <div key={d.key} style={styles.agendaCol}>
+                  <div key={d.key} style={{ ...styles.agendaCol, outline: isToday ? '2px solid rgba(99,102,241,0.35)' : 'none' }}>
                     <div style={styles.agendaDayHeader}>{d.label}</div>
                     <div style={styles.agendaItems}>
                       {items.length === 0 ? (
@@ -970,7 +1016,7 @@ const styles = {
     marginBottom: 12,
     gap: 12,
   },
-  reportKPIs: { display: 'grid', gridTemplateColumns: 'repeat(5, auto)', gap: 12 },
+  reportKPIs: { display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: 12 },
   kpi: {
     background: 'rgba(255,255,255,0.02)',
     border: '1px solid rgba(255,255,255,0.06)',
@@ -980,16 +1026,6 @@ const styles = {
   },
   kpiLabel: { fontSize: 12, color: '#9AA6B2' },
   kpiValue: { fontSize: 18, fontWeight: 700 },
-
-  progressWrap: { marginTop: 6, marginBottom: 10 },
-  progressTrack: {
-    height: 10,
-    borderRadius: 999,
-    background: 'rgba(255,255,255,0.08)',
-    overflow: 'hidden',
-  },
-  progressFill: { height: '100%', background: 'linear-gradient(90deg, rgba(34,197,94,0.9), rgba(99,102,241,0.9))' },
-  progressLabel: { marginTop: 6, fontSize: 12, color: '#9AA6B2' },
 
   tipGrid: {
     display: 'grid',
@@ -1014,7 +1050,14 @@ const styles = {
   },
   tipTitle: { fontSize: 13, fontWeight: 700, marginBottom: 6, textAlign: 'center' },
   tipRow: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#E6ECFF', justifyContent: 'space-between' },
-  pieWrap: { height: 100, width: '100%', marginBottom: 8 },
+  centeredPieWrap: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 260,
+    width: '100%',
+    marginBottom: 12,
+  },
 
   statusGrid: {
     display: 'grid',
@@ -1038,7 +1081,7 @@ const styles = {
     borderRadius: 12,
     padding: 12,
   },
-  agendaHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 },
+  agendaHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 },
   agendaGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 },
   agendaCol: {
     background: 'rgba(255,255,255,0.02)',
@@ -1087,6 +1130,7 @@ const styles = {
     borderRadius: 10,
     padding: '10px 16px',
     color: '#E6ECFF',
+    cursor: 'pointer',
   },
   ok: { color: '#4ADE80', fontSize: 13 },
   error: { color: '#FCA5A5', fontSize: 13 },
